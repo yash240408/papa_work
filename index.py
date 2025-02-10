@@ -1,6 +1,5 @@
 import time
 import pandas as pd
-import logging
 from io import StringIO
 from flask import Flask, render_template, request, Response
 from selenium import webdriver
@@ -11,30 +10,27 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 
 app = Flask(__name__)
 
-# Configure logging
-logging.basicConfig(filename="scraper.log", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
 def scrape_exhibitor_data(last_page):
-    # Initialize WebDriver (Headless mode for Vercel compatibility)
+    # Set up Selenium WebDriver (headless mode for Vercel)
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(options=options)
     
+    driver = webdriver.Chrome(options=options)
     url = "https://app.virtubox.io/bharat-tex/directory-website"
     driver.get(url)
-    
-    logging.info("Opened website successfully.")
+
+    print("Opened website successfully.")
 
     # Wait for the table to load
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/main/div/div[3]/div/section/div/div[3]/div/div[2]/div/table"))
         )
-        logging.info("Table loaded successfully.")
+        print("Table loaded successfully.")
     except TimeoutException:
-        logging.error("Table did not load in time. Exiting...")
+        print("Table did not load in time. Exiting...")
         driver.quit()
         return None
 
@@ -44,7 +40,6 @@ def scrape_exhibitor_data(last_page):
 
     while page <= last_page:
         print(f"📄 Scraping Page {page}...")
-        logging.info(f"Scraping Page {page}...")
 
         try:
             # Locate the table
@@ -54,7 +49,7 @@ def scrape_exhibitor_data(last_page):
             # Extract column headers if running for the first time
             if page == 1 and rows:
                 headers = [th.text.strip() for th in rows[0].find_elements(By.TAG_NAME, "th")]
-                logging.info(f"Column Headers: {headers}")
+                print(f"Column Headers: {headers}")
 
             # Extract data rows
             page_data = []
@@ -64,11 +59,11 @@ def scrape_exhibitor_data(last_page):
                 if exhibitor_data:
                     page_data.append(exhibitor_data)
 
-            logging.info(f"Extracted {len(page_data)} rows from Page {page}")
+            print(f"✅ Extracted {len(page_data)} rows from Page {page}")
             exhibitors.extend(page_data)  
 
             if page >= last_page:
-                logging.info(f"Reached last page ({last_page}). Stopping pagination.")
+                print(f"✅ Reached last page ({last_page}). Stopping pagination.")
                 break
 
             # Find and click the 'Next' button
@@ -76,7 +71,7 @@ def scrape_exhibitor_data(last_page):
                 next_button = driver.find_element(By.XPATH, "/html/body/div[1]/main/div/div[3]/div/section/div/div[3]/div/div[3]/div[2]/div/ul/li[9]")
                 button_class = next_button.get_attribute("class")
                 if "disabled" in button_class:
-                    logging.info("Next button is disabled. No more pages to scrape.")
+                    print("⚠️ Next button is disabled. No more pages to scrape.")
                     break
 
                 driver.execute_script("arguments[0].scrollIntoView();", next_button)
@@ -86,16 +81,16 @@ def scrape_exhibitor_data(last_page):
                 page += 1  
 
             except NoSuchElementException:
-                logging.error("Next button not found. Ending scraping.")
+                print("❌ Next button not found. Ending scraping.")
                 break  
 
             except ElementClickInterceptedException:
-                logging.warning("Click intercepted, retrying...")
+                print("⚠️ Click intercepted, retrying...")
                 time.sleep(2)
                 driver.execute_script("arguments[0].click();", next_button)  
 
         except Exception as e:
-            logging.error(f"Error while scraping: {e}")
+            print(f"❌ Error while scraping: {e}")
             break
 
     driver.quit()
