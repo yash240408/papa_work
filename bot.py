@@ -1,9 +1,8 @@
 import os
 import logging
 import json
-import requests
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 from flask import Flask, request
 
 # Set up logging
@@ -16,30 +15,31 @@ app = Flask(__name__)
 # Telegram bot token
 TOKEN = "7477944602:AAFdaka8cEvi3fr-zXb9ke1azDTCQf9doiE"
 
-# Set up the Updater and Dispatcher
-updater = Updater(TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+# Create application
+app_telegram = Application.builder().token(TOKEN).build()
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     """Send a welcome message when /start command is issued"""
-    update.message.reply_text("Hello! Send me a forwarded photo, and I’ll handle it.")
+    print("Hello! Send me a forwarded photo, and I’ll handle it.")
+    await update.message.reply_text("Hello! Send me a forwarded photo, and I’ll handle it.")
 
-def handle_forwarded_photo(update: Update, context: CallbackContext) -> None:
+async def handle_forwarded_photo(update: Update, context: CallbackContext) -> None:
     """Handle forwarded images (normal & self-destruct)"""
     if update.message.photo:
-        # Get the photo file_id
-        photo = update.message.photo[-1]  # The highest resolution photo
+        # Get the highest resolution photo
+        photo = update.message.photo[-1]
         file_id = photo.file_id
 
         # Download the image
-        file = context.bot.get_file(file_id)
-        file.download(f"photo_{file_id}.jpg")
-        
-        update.message.reply_text(f"Image saved: photo_{file_id}.jpg")
+        file = await context.bot.get_file(file_id)
+        await file.download_to_drive(f"photo_{file_id}.jpg")
+        print(f"Image saved: photo_{file_id}.jpg")
+        await update.message.reply_text(f"Image saved: photo_{file_id}.jpg")
 
-def handle_message(update: Update, context: CallbackContext) -> None:
+async def handle_message(update: Update, context: CallbackContext) -> None:
     """Handle non-photo messages"""
-    update.message.reply_text("Send me a forwarded photo!")
+    print("Send me a forwarded photo!")
+    await update.message.reply_text("Send me a forwarded photo!")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -47,22 +47,22 @@ def webhook():
     if request.method == "POST":
         payload = request.get_data().decode("UTF-8")
         json_payload = json.loads(payload)
-        update = Update.de_json(json_payload, updater.bot)
-        dispatcher.process_update(update)
+        update = Update.de_json(json_payload, app_telegram.bot)
+        app_telegram.update_queue.put_nowait(update)
         return 'ok', 200
     return "Invalid Request", 400
 
 if __name__ == '__main__':
     # Add handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(MessageHandler(Filters.forwarded & Filters.photo, handle_forwarded_photo))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    app_telegram.add_handler(CommandHandler("start", start))
+    app_telegram.add_handler(MessageHandler(filters.FORWARDED & filters.PHOTO, handle_forwarded_photo))
+    app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start polling (for local testing)
-    updater.start_polling()
+    app_telegram.run_polling()
 
     # Uncomment below if using webhook
-    # updater.bot.setWebhook("https://your-deployed-app.com/webhook")
+    # app_telegram.bot.setWebhook("https://your-deployed-app.com/webhook")
 
     # Start Flask app
     app.run(host="0.0.0.0", port=5000)
