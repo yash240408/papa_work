@@ -2,28 +2,30 @@ import os
 import logging
 import json
 import requests
-from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, Dispatcher
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from flask import Flask, request
-from telegram.ext import CallbackContext
 
 # Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-logger = logging.getLogger(_name_)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Flask app
-app = Flask(_name_)
+app = Flask(__name__)
 
 # Telegram bot token
-TOKEN = ("7477944602:AAFdaka8cEvi3fr-zXb9ke1azDTCQf9doiE")
+TOKEN = "7477944602:AAFdaka8cEvi3fr-zXb9ke1azDTCQf9doiE"
+
+# Set up the Updater and Dispatcher
+updater = Updater(TOKEN, use_context=True)
+dispatcher = updater.dispatcher
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send a welcome message when /start command is issued"""
-    update.message.reply_text("Hello! I can handle forwarded images and self-destructive ones.")
+    update.message.reply_text("Hello! Send me a forwarded photo, and I’ll handle it.")
 
 def handle_forwarded_photo(update: Update, context: CallbackContext) -> None:
-    """Handle forwarded images (self-destruction or normal)"""
+    """Handle forwarded images (normal & self-destruct)"""
     if update.message.photo:
         # Get the photo file_id
         photo = update.message.photo[-1]  # The highest resolution photo
@@ -32,40 +34,35 @@ def handle_forwarded_photo(update: Update, context: CallbackContext) -> None:
         # Download the image
         file = context.bot.get_file(file_id)
         file.download(f"photo_{file_id}.jpg")
+        
         update.message.reply_text(f"Image saved: photo_{file_id}.jpg")
 
 def handle_message(update: Update, context: CallbackContext) -> None:
-    """Handle all other messages (non-photo)"""
-    if update.message.text:
-        update.message.reply_text("I'm here to help you handle forwarded photos.")
+    """Handle non-photo messages"""
+    update.message.reply_text("Send me a forwarded photo!")
 
-# Webhook handler
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """This function will process incoming updates from Telegram"""
+    """Process incoming updates from Telegram via webhook"""
     if request.method == "POST":
         payload = request.get_data().decode("UTF-8")
         json_payload = json.loads(payload)
-
-        # Get the Telegram update and pass it to the dispatcher
-        update = Update.de_json(json_payload, context.bot)
+        update = Update.de_json(json_payload, updater.bot)
         dispatcher.process_update(update)
-
         return 'ok', 200
     return "Invalid Request", 400
 
-if _name_ == '_main_':
-    # Set up the Updater and Dispatcher
-    updater = Updater(TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-
+if __name__ == '__main__':
     # Add handlers
     dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(MessageHandler(Filters.forwarded & Filters.photo, handle_forwarded_photo))
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
-    # Start polling for updates (for testing locally)
+    # Start polling (for local testing)
     updater.start_polling()
 
-    # Set up webhook route for Vercel
-    app.run(host="0.0.0.0", port=5000)
+    # Uncomment below if using webhook
+    # updater.bot.setWebhook("https://your-deployed-app.com/webhook")
+
+    # Start Flask app
+    app.run(host="0.0.0.0", port=5000)
